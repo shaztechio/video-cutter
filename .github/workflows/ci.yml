@@ -15,5 +15,5 @@ jobs:
         with:
           node-version: '20'
       - run: npm install --package-lock-only --package-lock --legacy-peer-deps
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm test
