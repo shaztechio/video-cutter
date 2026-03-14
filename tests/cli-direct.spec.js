@@ -32,7 +32,9 @@ describe('index.js invoked directly as main module', () => {
     vi.doMock('../src/core.js', () => ({
       getVideoDuration: vi.fn(),
       createCountSegments: vi.fn(),
-      createTimeSegments: vi.fn()
+      createTimeSegments: vi.fn(),
+      detectSceneChanges: vi.fn(),
+      createSceneSegments: vi.fn()
     }))
     vi.doMock('commander', () => {
       const mockProgram = {
@@ -75,7 +77,9 @@ describe('index.js invoked directly as main module', () => {
     vi.doMock('../src/core.js', () => ({
       getVideoDuration: vi.fn(),
       createCountSegments: vi.fn(),
-      createTimeSegments: vi.fn()
+      createTimeSegments: vi.fn(),
+      detectSceneChanges: vi.fn(),
+      createSceneSegments: vi.fn()
     }))
     const parseMock = vi.fn()
     vi.doMock('commander', () => {

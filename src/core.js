@@ -101,12 +101,14 @@ function createSegment (inputFile, startTime, endTime, outputFile, reEncode = fa
       // Log progress if needed
     })
 
+    let stderrOutput = ''
     ffmpeg.stderr.on('data', (data) => {
-      // Handle errors
+      stderrOutput += data.toString()
     })
 
     ffmpeg.on('close', (code) => {
       if (code !== 0) {
+        if (stderrOutput) console.error(stderrOutput)
         reject(new Error(`ffmpeg exited with code ${code}`))
       } else {
         resolve()
@@ -243,9 +245,96 @@ async function createTimeSegments (inputFile, videoDuration, segmentDuration, ou
     })
 }
 
+/**
+ * Detect scene changes using ffprobe's scdet filter
+ *
+ * Note: file paths containing `:` or `,` may break the lavfi filter string.
+ *
+ * @param {string} inputFile - Path to the input video file
+ * @param {number} threshold - Scene change sensitivity (0–100, default: 10)
+ * @returns {Promise<number[]>} - Array of timestamps (always starts with 0)
+ */
+async function detectSceneChanges (inputFile, threshold = 10) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-v', 'quiet',
+      '-f', 'lavfi',
+      '-i', `movie=${inputFile},scdet=threshold=${threshold}:sc_pass=1`,
+      '-show_frames', '-select_streams', 'v:0',
+      '-of', 'json'
+    ]
+    const proc = spawn('ffprobe', args)
+    let output = ''
+    proc.stdout.on('data', chunk => { output += chunk })
+    proc.on('close', code => {
+      if (code !== 0) return reject(new Error(`ffprobe exited with code ${code}`))
+      let parsed
+      try { parsed = JSON.parse(output) } catch {
+        return reject(new Error('Could not parse scene detection output'))
+      }
+      const frames = parsed.frames ?? []
+      const timestamps = frames.map(f => parseFloat(f.pts_time ?? f.pkt_pts_time))
+      const result = timestamps.length > 0 && timestamps[0] === 0
+        ? timestamps
+        : [0, ...timestamps]
+      resolve(result)
+    })
+  })
+}
+
+/**
+ * Create video segments at scene change boundaries
+ *
+ * @param {string} inputFile - Path to the input video file
+ * @param {string} outputDir - Directory to save the segments
+ * @param {number[]} boundaries - Array of timestamps including 0 at start and total duration at end
+ * @param {boolean} verifySegments - Whether to verify segment durations
+ * @param {boolean} reEncode - Whether to re-encode for exact duration
+ * @returns {Promise<void>}
+ */
+async function createSceneSegments (inputFile, outputDir, boundaries, verifySegments = false, reEncode = false) {
+  const segmentCount = boundaries.length - 1
+  const promises = []
+
+  for (let i = 0; i < segmentCount; i++) {
+    const startTime = boundaries[i]
+    const endTime = boundaries[i + 1]
+    const segmentFile = path.join(outputDir, `scene_${String(i + 1).padStart(3, '0')}.mp4`)
+    promises.push(createSegment(inputFile, startTime, endTime, segmentFile, reEncode))
+  }
+
+  return Promise.all(promises)
+    .then(async () => {
+      console.log('All segments created successfully!')
+
+      if (verifySegments) {
+        console.log('Verifying segment durations...')
+        for (let i = 0; i < segmentCount; i++) {
+          const expectedDuration = boundaries[i + 1] - boundaries[i]
+          const segmentFile = path.join(outputDir, `scene_${String(i + 1).padStart(3, '0')}.mp4`)
+
+          const actualDuration = await getVideoDuration(segmentFile)
+          const difference = Math.abs(actualDuration - expectedDuration)
+          const tolerance = reEncode ? 0.1 : 1.0
+          if (difference > tolerance) {
+            console.warn(`Warning: Segment ${segmentFile} duration is ${actualDuration.toFixed(2)} seconds, expected ${expectedDuration.toFixed(2)} seconds`)
+          } else {
+            console.log(colors.green(`Verified: ${segmentFile} duration is correct`))
+          }
+        }
+      }
+    })
+    .catch(err => {
+      console.error('Error creating segments:', err)
+      process.exit(1)
+    })
+}
+
 export {
   getVideoDuration,
   createSegment,
   createCountSegments,
-  createTimeSegments
+  createTimeSegments,
+  detectSceneChanges,
+  createSceneSegments
 }

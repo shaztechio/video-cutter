@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import inquirer from 'inquirer'
 import { Command } from 'commander'
-import { getVideoDuration, createCountSegments, createTimeSegments } from '../src/core.js'
+import { getVideoDuration, createCountSegments, createTimeSegments, detectSceneChanges, createSceneSegments } from '../src/core.js'
 import { processVideo, setupCli } from '../index.js'
 
 vi.mock('child_process', () => ({
@@ -28,7 +28,9 @@ vi.mock('child_process', () => ({
 vi.mock('../src/core.js', () => ({
   getVideoDuration: vi.fn(),
   createCountSegments: vi.fn(),
-  createTimeSegments: vi.fn()
+  createTimeSegments: vi.fn(),
+  detectSceneChanges: vi.fn(),
+  createSceneSegments: vi.fn()
 }))
 
 vi.mock('commander', () => {
@@ -227,6 +229,85 @@ describe('processVideo', () => {
       await processVideo({ input: 'video.mp4', segments: 2, output: '/out', verify: true, reEncode: true })
 
       expect(createCountSegments).toHaveBeenCalledWith('video.mp4', 120, 2, '/out', true, true)
+    })
+  })
+
+  describe('scene-detect segmentation (--scene-detect)', () => {
+    it('calls detectSceneChanges with threshold 10 when sceneDetect is true', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(detectSceneChanges).mockResolvedValue([0, 5.2, 12.8])
+      vi.mocked(createSceneSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', sceneDetect: true })
+
+      expect(detectSceneChanges).toHaveBeenCalledWith('video.mp4', 10)
+    })
+
+    it('calls detectSceneChanges with parsed threshold when sceneDetect is a string', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(detectSceneChanges).mockResolvedValue([0, 5.2, 12.8])
+      vi.mocked(createSceneSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', sceneDetect: '25' })
+
+      expect(detectSceneChanges).toHaveBeenCalledWith('video.mp4', 25)
+    })
+
+    it('appends duration to boundaries before calling createSceneSegments', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(detectSceneChanges).mockResolvedValue([0, 5.2, 12.8])
+      vi.mocked(createSceneSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', sceneDetect: true })
+
+      expect(createSceneSegments).toHaveBeenCalledWith('video.mp4', '/out', [0, 5.2, 12.8, 120], false, false)
+    })
+
+    it('exits with code 0 and warns when only [0] is returned (no scenes)', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(detectSceneChanges).mockResolvedValue([0])
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
+
+      await expect(processVideo({ input: 'video.mp4', output: '/out', sceneDetect: true })).rejects.toThrow('exit')
+      expect(exitSpy).toHaveBeenCalledWith(0)
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('No scene changes detected'))
+    })
+
+    it('warns about stream copy mode when not re-encoding', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(detectSceneChanges).mockResolvedValue([0, 5.2, 12.8])
+      vi.mocked(createSceneSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', sceneDetect: true })
+
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('stream copy mode'))
+    })
+
+    it('does not warn about stream copy when reEncode is true', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(detectSceneChanges).mockResolvedValue([0, 5.2, 12.8])
+      vi.mocked(createSceneSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', sceneDetect: true, reEncode: true })
+
+      expect(console.warn).not.toHaveBeenCalled()
+    })
+
+    it('passes verify and reEncode flags correctly to createSceneSegments', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(detectSceneChanges).mockResolvedValue([0, 5.2, 12.8])
+      vi.mocked(createSceneSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', sceneDetect: true, verify: true, reEncode: true })
+
+      expect(createSceneSegments).toHaveBeenCalledWith('video.mp4', '/out', [0, 5.2, 12.8, 120], true, true)
     })
   })
 })

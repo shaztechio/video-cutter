@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventEmitter } from 'events'
 
 import { spawn } from 'child_process'
-import { getVideoDuration, createSegment, createCountSegments, createTimeSegments } from '../src/core.js'
+import { getVideoDuration, createSegment, createCountSegments, createTimeSegments, detectSceneChanges, createSceneSegments } from '../src/core.js'
 
 vi.mock('child_process', () => ({
   spawn: vi.fn()
@@ -196,6 +196,139 @@ describe('createTimeSegments', () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
     vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ exitCode: 1 }))
     await expect(createTimeSegments('video.mp4', 60, 60, '/output')).rejects.toThrow('exit')
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+})
+
+describe('detectSceneChanges', () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(() => vi.restoreAllMocks())
+
+  it('resolves with timestamps when frames are returned using pts_time (ffmpeg 7+)', async () => {
+    const framesJson = JSON.stringify({
+      frames: [
+        { pts_time: '5.2' },
+        { pts_time: '12.8' }
+      ]
+    })
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ stdoutData: framesJson }))
+    const result = await detectSceneChanges('video.mp4')
+    expect(result).toEqual([0, 5.2, 12.8])
+  })
+
+  it('resolves with timestamps when frames are returned using pkt_pts_time fallback (ffmpeg <7)', async () => {
+    const framesJson = JSON.stringify({
+      frames: [
+        { pkt_pts_time: '5.2' },
+        { pkt_pts_time: '12.8' }
+      ]
+    })
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ stdoutData: framesJson }))
+    const result = await detectSceneChanges('video.mp4')
+    expect(result).toEqual([0, 5.2, 12.8])
+  })
+
+  it('resolves with [0] when frames array is empty', async () => {
+    const framesJson = JSON.stringify({ frames: [] })
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ stdoutData: framesJson }))
+    const result = await detectSceneChanges('video.mp4')
+    expect(result).toEqual([0])
+  })
+
+  it('resolves with [0] when frames key is missing (malformed JSON object)', async () => {
+    const framesJson = JSON.stringify({})
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ stdoutData: framesJson }))
+    const result = await detectSceneChanges('video.mp4')
+    expect(result).toEqual([0])
+  })
+
+  it('rejects on non-zero exit code', async () => {
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ exitCode: 1 }))
+    await expect(detectSceneChanges('video.mp4')).rejects.toThrow('ffprobe exited with code 1')
+  })
+
+  it('rejects when stdout is not valid JSON', async () => {
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ stdoutData: 'not-json' }))
+    await expect(detectSceneChanges('video.mp4')).rejects.toThrow('Could not parse scene detection output')
+  })
+
+  it('uses default threshold 10 in spawn args', async () => {
+    const framesJson = JSON.stringify({ frames: [] })
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ stdoutData: framesJson }))
+    await detectSceneChanges('video.mp4')
+    expect(spawn).toHaveBeenCalledWith('ffprobe', expect.arrayContaining([
+      expect.stringContaining('threshold=10')
+    ]))
+  })
+
+  it('uses provided threshold in spawn args', async () => {
+    const framesJson = JSON.stringify({ frames: [] })
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ stdoutData: framesJson }))
+    await detectSceneChanges('video.mp4', 25)
+    expect(spawn).toHaveBeenCalledWith('ffprobe', expect.arrayContaining([
+      expect.stringContaining('threshold=25')
+    ]))
+  })
+
+  it('does not duplicate 0 if first frame timestamp is already 0', async () => {
+    const framesJson = JSON.stringify({
+      frames: [
+        { pts_time: '0' },
+        { pts_time: '8.5' }
+      ]
+    })
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ stdoutData: framesJson }))
+    const result = await detectSceneChanges('video.mp4')
+    expect(result[0]).toBe(0)
+    expect(result.filter(t => t === 0)).toHaveLength(1)
+  })
+})
+
+describe('createSceneSegments', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('creates N-1 segments from N boundaries with scene_NNN.mp4 filenames', async () => {
+    vi.mocked(spawn)
+      .mockReturnValueOnce(createMockProcess())
+      .mockReturnValueOnce(createMockProcess())
+    await expect(createSceneSegments('video.mp4', '/output', [0, 5.2, 30])).resolves.toBeUndefined()
+    expect(spawn).toHaveBeenCalledTimes(2)
+    expect(spawn).toHaveBeenCalledWith('ffmpeg', expect.arrayContaining([expect.stringContaining('scene_001.mp4')]))
+    expect(spawn).toHaveBeenCalledWith('ffmpeg', expect.arrayContaining([expect.stringContaining('scene_002.mp4')]))
+  })
+
+  it('passes reEncode=true through to spawn args (-c:v libx264)', async () => {
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess())
+    await createSceneSegments('video.mp4', '/output', [0, 30], false, true)
+    expect(spawn).toHaveBeenCalledWith('ffmpeg', expect.arrayContaining(['-c:v', 'libx264']))
+  })
+
+  it('verifies durations when verifySegments=true', async () => {
+    vi.mocked(spawn)
+      .mockReturnValueOnce(createMockProcess())
+      .mockReturnValueOnce(createMockProcess({ stdoutData: '30.0\n' }))
+    await createSceneSegments('video.mp4', '/output', [0, 30], true)
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Verified'))
+  })
+
+  it('warns on duration mismatch during verification', async () => {
+    vi.mocked(spawn)
+      .mockReturnValueOnce(createMockProcess())
+      .mockReturnValueOnce(createMockProcess({ stdoutData: '1.0\n' })) // expected 30s
+    await createSceneSegments('video.mp4', '/output', [0, 30], true)
+    expect(console.warn).toHaveBeenCalled()
+  })
+
+  it('calls process.exit(1) on segment creation failure', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ exitCode: 1 }))
+    await expect(createSceneSegments('video.mp4', '/output', [0, 5.2, 30])).rejects.toThrow('exit')
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
 })

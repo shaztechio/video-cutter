@@ -27,7 +27,9 @@ describe('module-level ffmpeg/ffprobe check', () => {
     vi.doMock('../src/core.js', () => ({
       getVideoDuration: vi.fn(),
       createCountSegments: vi.fn(),
-      createTimeSegments: vi.fn()
+      createTimeSegments: vi.fn(),
+      detectSceneChanges: vi.fn(),
+      createSceneSegments: vi.fn()
     }))
     vi.doMock('commander', () => {
       const mockProgram = {

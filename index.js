@@ -23,7 +23,9 @@ import colors from 'colors'
 import {
   getVideoDuration,
   createCountSegments,
-  createTimeSegments
+  createTimeSegments,
+  detectSceneChanges,
+  createSceneSegments
 } from './src/core.js'
 
 // Colored console output helpers
@@ -95,7 +97,24 @@ async function processVideo (options) {
 
     console.log(`Video duration: ${duration} seconds`)
 
-    if (segmentDuration) {
+    const sceneDetect = options.sceneDetect ?? null
+    const threshold = sceneDetect === true ? 10 : (sceneDetect ? parseInt(sceneDetect) : null)
+
+    if (sceneDetect !== null) {
+      console.log(`Detecting scene changes with threshold: ${threshold}...`)
+      const timestamps = await detectSceneChanges(inputFile, threshold)
+      if (timestamps.length <= 1) {
+        console.warn('No scene changes detected. Cannot create segments.')
+        process.exit(0)
+      }
+      const boundaries = [...timestamps, duration]
+      console.log('boundaries:', boundaries)
+      console.log(`${boundaries.length - 1} scene segment(s) will be created.`)
+      if (!reEncode) {
+        console.warn('Using stream copy mode. Durations may vary slightly. Use --re-encode for exact cuts.')
+      }
+      return createSceneSegments(inputFile, outputPath, boundaries, verifySegments, reEncode)
+    } else if (segmentDuration) {
       // Time-based segmentation
       const calculatedSegmentCount = Math.ceil(duration / segmentDuration)
       console.log(`${calculatedSegmentCount} segments will be created.`)
@@ -183,6 +202,11 @@ function setupCli () {
     .requiredOption('-i, --input <path>', 'input video file path')
     .addOption(new Option('-n, --segments <number>', 'number of segments to create').conflicts('duration'))
     .addOption(new Option('-d, --duration <seconds>', 'duration of each segment in seconds').conflicts('segments'))
+    .addOption(
+      new Option('--scene-detect [threshold]', 'cut at scene change boundaries (threshold 0–100, default: 10)')
+        .conflicts('segments')
+        .conflicts('duration')
+    )
     .option('-o, --output <path>', 'output directory for segments (default: ./output/YYYY-MM-DD_HH-MM-SS/)')
     .option('--verify', 'verify that each segment matches its intended duration')
     .option('--re-encode', 're-encode segments for exact duration (slower but more accurate)')
