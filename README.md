@@ -82,15 +82,14 @@ This detects hard cuts between scenes and creates one segment per scene, named `
 video-cutter -i my_video.mp4 --scene-detect 20
 ```
 
-The threshold (0–100) controls sensitivity to scene changes. It represents the minimum per-frame difference score required to count as a scene cut:
+The `scdet` filter computes a per-frame difference score (0–100) representing how different each frame is from the previous one — essentially the percentage of maximum possible pixel change across the frame.
 
-| Threshold | Behaviour |
-|-----------|-----------|
-| 2–5       | Very sensitive — catches subtle transitions and fades; may produce false positives |
-| **8–14**  | **Recommended range** — reliably detects hard cuts with few false positives |
-| 20–30     | Only dramatic, obvious cuts; may miss some real scene changes |
+- **Low threshold (e.g. 2–5):** Very sensitive — detects subtle transitions, fades, and gradual lighting changes. Produces many cuts, including false positives.
+- **Default threshold (10):** Catches hard cuts reliably with few false positives. ffmpeg's own docs suggest the sweet spot is 8–14.
+- **High threshold (e.g. 30–50):** Only detects dramatic, obvious scene changes. May miss some real cuts.
+- **100:** Would never trigger (nothing is ever 100% different).
 
-The default is **10**. Raise it if you are getting too many segments; lower it if real cuts are being missed.
+So for a cartoon with sharp hard cuts between scenes, the default of 10 should work well. If you're getting too many segments (spurious cuts on action frames), raise it to 20–30. If you're getting too few (missing real scene changes), lower it to 5–8.
 
 **Note:** File paths containing `:` or `,` may cause scene detection to fail due to limitations in the ffmpeg lavfi filter string format.
 
