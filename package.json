@@ -1,0 +1,38 @@
+{
+  "name": "@shaztech/video-cutter",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A CLI tool to cut videos into segments using ffmpeg",
+  "main": "index.js",
+  "bin": {
+    "video-cutter": "./index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "npm run lint && node --test test.js"
+  },
+  "keywords": [
+    "video",
+    "cut",
+    "segment",
+    "ffmpeg",
+    "cli"
+  ],
+  "author": "Shazron Abdullah",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "colors": "^1.4.0",
+    "commander": "^14.0.3",
+    "inquirer": "^13.3.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-n": "^17.24.0",
+    "eslint-plugin-promise": "^7.2.1"
+  }
+}
