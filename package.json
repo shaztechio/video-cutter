@@ -39,5 +39,9 @@
     "eslint-plugin-promise": "^7.2.1",
     "jsdom": "^28.1.0",
     "vitest": "^4.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shazron/video-cutter.git"
   }
 }
