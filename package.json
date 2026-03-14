@@ -43,5 +43,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/shazron/video-cutter.git"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
