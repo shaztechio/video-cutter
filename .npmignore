@@ -1,0 +1,5 @@
+.claude/
+.github/
+tests/
+vitest.config.js
+.eslintrc.json
