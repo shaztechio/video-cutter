@@ -1,6 +1,6 @@
 # Video Cutter
 
-[![CI](https://github.com/shazron/video-cutter/actions/workflows/ci.yml/badge.svg)](https://github.com/shazron/video-cutter/actions/workflows/ci.yml)
+[![CI](https://github.com/shaztechio/video-cutter/actions/workflows/ci.yml/badge.svg)](https://github.com/shaztechio/video-cutter/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/@shaztech/video-cutter.svg)](https://www.npmjs.com/package/@shaztech/video-cutter)
 
 A CLI tool to cut a video file into segments using ffmpeg — by equal count, fixed duration, or automatic scene change detection.
