@@ -8,7 +8,7 @@ A CLI tool to cut a video file into segments using ffmpeg — by equal count, fi
 ## Prerequisites
 
 - Node.js
-- ffmpeg (must be installed and available in PATH)
+- ffmpeg (must be installed and available in PATH — see [INSTALLING_FFMPEG.md](INSTALLING_FFMPEG.md) for instructions)
 
 ## Installation
 
