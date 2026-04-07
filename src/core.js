@@ -358,7 +358,9 @@ function parseTimecodes (timecodeString) {
       const h = parseInt(hmsMatch[1] ?? '0')
       const m = parseInt(hmsMatch[2] ?? '0')
       const s = parseFloat(hmsMatch[3])
-      return h * 3600 + m * 60 + s
+      const seconds = h * 3600 + m * 60 + s
+      if (!Number.isFinite(seconds)) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+      return seconds
     }
 
     throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
