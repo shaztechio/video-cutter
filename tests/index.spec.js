@@ -299,7 +299,7 @@ describe('processVideo', () => {
 
       await expect(processVideo({ input: 'video.mp4', output: '/out', timecodes: '0s,10s' })).rejects.toThrow('exit')
       expect(exitSpy).toHaveBeenCalledWith(1)
-      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('position 1'))
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('position 1 must be greater than 0'))
     })
 
     it('exits with error when timecodes are not in ascending order', async () => {
