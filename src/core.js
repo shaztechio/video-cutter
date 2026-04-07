@@ -331,9 +331,10 @@ async function createSceneSegments (inputFile, outputDir, boundaries, verifySegm
 }
 
 /**
- * Parse a CSV string of HH:MM:SS[.nnnn] timecodes into an array of seconds
+ * Parse a CSV string of timecodes into an array of seconds.
+ * Supported formats are HH:MM:SS[.nnnn], Ns, N.Ns, and [Nh][Nm]N[.N]s.
  *
- * @param {string} timecodeString - Comma-separated timecodes e.g. "00:00:10.000,00:00:30.000"
+ * @param {string} timecodeString - Comma-separated timecodes, e.g. "00:00:10.000,00:00:30.000", "10s,10.25s", or "0h0m10s,1h30m15.2s"
  * @returns {number[]} - Array of timestamps in seconds
  */
 function parseTimecodes (timecodeString) {
@@ -343,11 +344,11 @@ function parseTimecodes (timecodeString) {
 
     // Format: HH:MM:SS[.nnn]
     if (trimmed.includes(':')) {
-      const parts = trimmed.split(':')
-      if (parts.length !== 3) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
-      const [h, m, s] = parts
-      const seconds = parseInt(h) * 3600 + parseInt(m) * 60 + parseFloat(s)
-      if (isNaN(seconds)) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+      const colonMatch = trimmed.match(/^(\d+):(\d+):(\d+(?:\.\d+)?)$/)
+      if (!colonMatch) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+      const [, h, m, s] = colonMatch
+      const seconds = Number.parseInt(h, 10) * 3600 + Number.parseInt(m, 10) * 60 + Number.parseFloat(s)
+      if (!Number.isFinite(seconds)) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
       return seconds
     }
 
