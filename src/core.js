@@ -330,11 +330,114 @@ async function createSceneSegments (inputFile, outputDir, boundaries, verifySegm
     })
 }
 
+/**
+ * Parse a CSV string of HH:MM:SS[.nnnn] timecodes into an array of seconds
+ *
+ * @param {string} timecodeString - Comma-separated timecodes e.g. "00:00:10.000,00:00:30.000"
+ * @returns {number[]} - Array of timestamps in seconds
+ */
+function parseTimecodes (timecodeString) {
+  return timecodeString.split(',').map((tc, i) => {
+    const trimmed = tc.trim()
+    const pos = i + 1
+
+    // Format: HH:MM:SS[.nnn]
+    if (trimmed.includes(':')) {
+      const parts = trimmed.split(':')
+      if (parts.length !== 3) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+      const [h, m, s] = parts
+      const seconds = parseInt(h) * 3600 + parseInt(m) * 60 + parseFloat(s)
+      if (isNaN(seconds)) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+      return seconds
+    }
+
+    // Format: [Nh][Nm]N[.N]s — covers "10s", "10.25s", "0h0m10s", "1h30m15.2s"
+    const hmsMatch = trimmed.match(/^(?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s$/)
+    if (hmsMatch) {
+      const h = parseInt(hmsMatch[1] ?? '0')
+      const m = parseInt(hmsMatch[2] ?? '0')
+      const s = parseFloat(hmsMatch[3])
+      return h * 3600 + m * 60 + s
+    }
+
+    throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+  })
+}
+
+/**
+ * Create video segments at specified timecode boundaries
+ *
+ * @param {string} inputFile - Path to the input video file
+ * @param {string} outputDir - Directory to save the segments
+ * @param {number[]} boundaries - Array of timestamps including 0 at start and total duration at end
+ * @param {boolean} verifySegments - Whether to verify segment durations
+ * @param {boolean} reEncode - Whether to re-encode for exact duration
+ * @returns {Promise<void>}
+ */
+async function createTimecodeSegments (inputFile, outputDir, boundaries, verifySegments = false, reEncode = false) {
+  const segmentCount = boundaries.length - 1
+  const promises = []
+
+  for (let i = 0; i < segmentCount; i++) {
+    const startTime = boundaries[i]
+    const endTime = boundaries[i + 1]
+
+    const hours = Math.floor(startTime / 3600)
+    const minutes = Math.floor((startTime % 3600) / 60)
+    const secs = startTime % 60
+    const pad = (n) => String(n).padStart(2, '0')
+    const millisStr = secs.toFixed(3).split('.')[1]
+    const timeStr = `${pad(hours)}-${pad(minutes)}-${pad(Math.floor(secs))}.${millisStr}`
+    const seqStr = String(i + 1).padStart(3, '0')
+    const segmentFile = path.join(outputDir, `tc_${seqStr}_${timeStr}.mp4`)
+
+    promises.push(createSegment(inputFile, startTime, endTime, segmentFile, reEncode))
+  }
+
+  return Promise.all(promises)
+    .then(async () => {
+      console.log('All segments created successfully!')
+
+      if (verifySegments) {
+        console.log('Verifying segment durations...')
+        for (let i = 0; i < segmentCount; i++) {
+          const startTime = boundaries[i]
+          const endTime = boundaries[i + 1]
+          const expectedDuration = endTime - startTime
+
+          const hours = Math.floor(startTime / 3600)
+          const minutes = Math.floor((startTime % 3600) / 60)
+          const secs = startTime % 60
+          const pad = (n) => String(n).padStart(2, '0')
+          const millisStr = secs.toFixed(3).split('.')[1]
+          const timeStr = `${pad(hours)}-${pad(minutes)}-${pad(Math.floor(secs))}.${millisStr}`
+          const seqStr = String(i + 1).padStart(3, '0')
+          const segmentFile = path.join(outputDir, `tc_${seqStr}_${timeStr}.mp4`)
+
+          const actualDuration = await getVideoDuration(segmentFile)
+          const difference = Math.abs(actualDuration - expectedDuration)
+          const tolerance = reEncode ? 0.1 : 1.0
+          if (difference > tolerance) {
+            console.warn(`Warning: Segment ${segmentFile} duration is ${actualDuration.toFixed(2)} seconds, expected ${expectedDuration.toFixed(2)} seconds`)
+          } else {
+            console.log(colors.green(`Verified: ${segmentFile} duration is correct`))
+          }
+        }
+      }
+    })
+    .catch(err => {
+      console.error('Error creating segments:', err)
+      process.exit(1)
+    })
+}
+
 export {
   getVideoDuration,
   createSegment,
   createCountSegments,
   createTimeSegments,
   detectSceneChanges,
-  createSceneSegments
+  createSceneSegments,
+  parseTimecodes,
+  createTimecodeSegments
 }

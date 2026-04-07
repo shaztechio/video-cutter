@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventEmitter } from 'events'
 
 import { spawn } from 'child_process'
-import { getVideoDuration, createSegment, createCountSegments, createTimeSegments, detectSceneChanges, createSceneSegments } from '../src/core.js'
+import { getVideoDuration, createSegment, createCountSegments, createTimeSegments, detectSceneChanges, createSceneSegments, parseTimecodes, createTimecodeSegments } from '../src/core.js'
 
 vi.mock('child_process', () => ({
   spawn: vi.fn()
@@ -329,6 +329,145 @@ describe('createSceneSegments', () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
     vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ exitCode: 1 }))
     await expect(createSceneSegments('video.mp4', '/output', [0, 5.2, 30])).rejects.toThrow('exit')
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+})
+
+describe('parseTimecodes', () => {
+  describe('HH:MM:SS format', () => {
+    it('parses a single timecode into seconds', () => {
+      expect(parseTimecodes('00:00:10.000')).toEqual([10])
+    })
+
+    it('parses multiple timecodes into seconds', () => {
+      expect(parseTimecodes('00:00:10.000,00:00:30.000,00:01:00.000')).toEqual([10, 30, 60])
+    })
+
+    it('handles sub-second precision', () => {
+      expect(parseTimecodes('00:00:10.500')).toEqual([10.5])
+    })
+
+    it('handles hours correctly', () => {
+      expect(parseTimecodes('01:00:00.000')).toEqual([3600])
+    })
+
+    it('omitting milliseconds works (HH:MM:SS)', () => {
+      expect(parseTimecodes('00:00:10,00:00:30')).toEqual([10, 30])
+    })
+
+    it('trims whitespace around timecodes', () => {
+      expect(parseTimecodes(' 00:00:10.000 , 00:00:30.000 ')).toEqual([10, 30])
+    })
+
+    it('throws on wrong number of colon-separated parts', () => {
+      expect(() => parseTimecodes('00:10.000')).toThrow('Invalid timecode at position 1')
+    })
+
+    it('throws on NaN result', () => {
+      expect(() => parseTimecodes('00:xx:10.000')).toThrow('Invalid timecode at position 1')
+    })
+  })
+
+  describe('Ns / N.Ns format', () => {
+    it('parses whole seconds', () => {
+      expect(parseTimecodes('10s,15s,25s')).toEqual([10, 15, 25])
+    })
+
+    it('parses decimal seconds', () => {
+      expect(parseTimecodes('10.25s,15.2s,25.1s')).toEqual([10.25, 15.2, 25.1])
+    })
+
+    it('trims whitespace', () => {
+      expect(parseTimecodes(' 10s , 20s ')).toEqual([10, 20])
+    })
+  })
+
+  describe('NhNmNs format', () => {
+    it('parses full h/m/s', () => {
+      expect(parseTimecodes('0h0m10s,0h0m30s')).toEqual([10, 30])
+    })
+
+    it('parses decimal seconds in hms format', () => {
+      expect(parseTimecodes('0h0m15.2s')).toEqual([15.2])
+    })
+
+    it('parses hours and minutes correctly', () => {
+      expect(parseTimecodes('1h30m0s')).toEqual([5400])
+    })
+
+    it('allows omitting h and m components', () => {
+      expect(parseTimecodes('10s')).toEqual([10])
+    })
+
+    it('allows omitting h component only', () => {
+      expect(parseTimecodes('5m30s')).toEqual([330])
+    })
+  })
+
+  describe('error cases', () => {
+    it('throws on completely invalid format', () => {
+      expect(() => parseTimecodes('badval')).toThrow('Invalid timecode at position 1')
+    })
+
+    it('includes position number in error for second invalid timecode', () => {
+      expect(() => parseTimecodes('10s,badval')).toThrow('Invalid timecode at position 2')
+    })
+  })
+})
+
+describe('createTimecodeSegments', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('creates segments with tc_NNN_HH-MM-SS.mmm.mp4 filenames', async () => {
+    vi.mocked(spawn)
+      .mockReturnValueOnce(createMockProcess())
+      .mockReturnValueOnce(createMockProcess())
+    await expect(createTimecodeSegments('video.mp4', '/output', [0, 10, 30])).resolves.toBeUndefined()
+    expect(spawn).toHaveBeenCalledTimes(2)
+    expect(spawn).toHaveBeenCalledWith('ffmpeg', expect.arrayContaining([expect.stringContaining('tc_001_00-00-00.000.mp4')]))
+    expect(spawn).toHaveBeenCalledWith('ffmpeg', expect.arrayContaining([expect.stringContaining('tc_002_00-00-10.000.mp4')]))
+  })
+
+  it('passes reEncode=true through to spawn args', async () => {
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess())
+    await createTimecodeSegments('video.mp4', '/output', [0, 30], false, true)
+    expect(spawn).toHaveBeenCalledWith('ffmpeg', expect.arrayContaining(['-c:v', 'libx264']))
+  })
+
+  it('verifies durations when verifySegments=true', async () => {
+    vi.mocked(spawn)
+      .mockReturnValueOnce(createMockProcess())
+      .mockReturnValueOnce(createMockProcess({ stdoutData: '10.0\n' }))
+    await createTimecodeSegments('video.mp4', '/output', [0, 10], true)
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Verified'))
+  })
+
+  it('warns on duration mismatch during verification', async () => {
+    vi.mocked(spawn)
+      .mockReturnValueOnce(createMockProcess())
+      .mockReturnValueOnce(createMockProcess({ stdoutData: '1.0\n' })) // expected 10s
+    await createTimecodeSegments('video.mp4', '/output', [0, 10], true)
+    expect(console.warn).toHaveBeenCalled()
+  })
+
+  it('uses 0.1s tolerance when re-encoding during verification', async () => {
+    vi.mocked(spawn)
+      .mockReturnValueOnce(createMockProcess())
+      .mockReturnValueOnce(createMockProcess({ stdoutData: '9.5\n' })) // 0.5s diff > 0.1s tolerance
+    await createTimecodeSegments('video.mp4', '/output', [0, 10], true, true)
+    expect(console.warn).toHaveBeenCalled()
+  })
+
+  it('calls process.exit(1) on segment creation failure', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
+    vi.mocked(spawn).mockReturnValueOnce(createMockProcess({ exitCode: 1 }))
+    await expect(createTimecodeSegments('video.mp4', '/output', [0, 10, 30])).rejects.toThrow('exit')
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
 })
