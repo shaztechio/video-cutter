@@ -25,7 +25,9 @@ import {
   createCountSegments,
   createTimeSegments,
   detectSceneChanges,
-  createSceneSegments
+  createSceneSegments,
+  parseTimecodes,
+  createTimecodeSegments
 } from './src/core.js'
 
 // Colored console output helpers
@@ -96,6 +98,49 @@ async function processVideo (options) {
     }
 
     console.log(`Video duration: ${duration} seconds`)
+
+    const timecodes = options.timecodes ?? null
+
+    if (timecodes !== null) {
+      let parsed
+      try {
+        parsed = parseTimecodes(timecodes)
+      } catch (err) {
+        error(err.message)
+        process.exit(1)
+      }
+
+      // Validate all timecodes are > 0
+      for (let i = 0; i < parsed.length; i++) {
+        if (parsed[i] <= 0) {
+          error(`Timecode at position ${i + 1} must be greater than 0`)
+          process.exit(1)
+        }
+      }
+
+      // Validate ascending order
+      for (let i = 1; i < parsed.length; i++) {
+        if (parsed[i] <= parsed[i - 1]) {
+          error(`Timecode at position ${i + 1} is not in ascending order`)
+          process.exit(1)
+        }
+      }
+
+      // Validate within video duration
+      for (let i = 0; i < parsed.length; i++) {
+        if (parsed[i] >= duration) {
+          error(`Timecode at position ${i + 1} exceeds video duration of ${duration.toFixed(2)} seconds`)
+          process.exit(1)
+        }
+      }
+
+      const boundaries = [0, ...parsed, duration]
+      console.log(`${boundaries.length - 1} segment(s) will be created.`)
+      if (!reEncode) {
+        console.warn('Using stream copy mode. Durations may vary slightly. Use --re-encode for exact cuts.')
+      }
+      return createTimecodeSegments(inputFile, outputPath, boundaries, verifySegments, reEncode)
+    }
 
     const sceneDetect = options.sceneDetect ?? null
     const threshold = sceneDetect === true ? 10 : (sceneDetect ? parseInt(sceneDetect) : null)
@@ -206,6 +251,12 @@ function setupCli () {
       new Option('--scene-detect [threshold]', 'cut at scene change boundaries (threshold 0–100, default: 10)')
         .conflicts('segments')
         .conflicts('duration')
+    )
+    .addOption(
+      new Option('-t, --timecodes <timecodes>', 'cut at specified timecodes (CSV: HH:MM:SS[.nnnn],...)')
+        .conflicts('segments')
+        .conflicts('duration')
+        .conflicts('sceneDetect')
     )
     .option('-o, --output <path>', 'output directory for segments (default: ./output/YYYY-MM-DD_HH-MM-SS/)')
     .option('--verify', 'verify that each segment matches its intended duration')

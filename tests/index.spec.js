@@ -16,8 +16,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 import fs from 'fs'
 import inquirer from 'inquirer'
-import { Command } from 'commander'
-import { getVideoDuration, createCountSegments, createTimeSegments, detectSceneChanges, createSceneSegments } from '../src/core.js'
+import { Command, Option } from 'commander'
+import { getVideoDuration, createCountSegments, createTimeSegments, detectSceneChanges, createSceneSegments, parseTimecodes, createTimecodeSegments } from '../src/core.js'
 import { processVideo, setupCli } from '../index.js'
 
 vi.mock('child_process', () => ({
@@ -30,7 +30,9 @@ vi.mock('../src/core.js', () => ({
   createCountSegments: vi.fn(),
   createTimeSegments: vi.fn(),
   detectSceneChanges: vi.fn(),
-  createSceneSegments: vi.fn()
+  createSceneSegments: vi.fn(),
+  parseTimecodes: vi.fn(),
+  createTimecodeSegments: vi.fn()
 }))
 
 vi.mock('commander', () => {
@@ -232,6 +234,97 @@ describe('processVideo', () => {
     })
   })
 
+  describe('timecode segmentation (--timecodes)', () => {
+    it('calls createTimecodeSegments with boundaries [0, ...parsed, duration]', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(parseTimecodes).mockReturnValue([10, 30, 60])
+      vi.mocked(createTimecodeSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', timecodes: '00:00:10.000,00:00:30.000,00:01:00.000' })
+
+      expect(parseTimecodes).toHaveBeenCalledWith('00:00:10.000,00:00:30.000,00:01:00.000')
+      expect(createTimecodeSegments).toHaveBeenCalledWith('video.mp4', '/out', [0, 10, 30, 60, 120], false, false)
+    })
+
+    it('passes verify and reEncode flags correctly', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(parseTimecodes).mockReturnValue([10, 30])
+      vi.mocked(createTimecodeSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', timecodes: '00:00:10.000,00:00:30.000', verify: true, reEncode: true })
+
+      expect(createTimecodeSegments).toHaveBeenCalledWith('video.mp4', '/out', [0, 10, 30, 120], true, true)
+    })
+
+    it('warns about stream copy mode when not re-encoding', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(parseTimecodes).mockReturnValue([10, 30])
+      vi.mocked(createTimecodeSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', timecodes: '00:00:10.000,00:00:30.000' })
+
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('stream copy mode'))
+    })
+
+    it('does not warn about stream copy when reEncode is true', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(parseTimecodes).mockReturnValue([10, 30])
+      vi.mocked(createTimecodeSegments).mockResolvedValue()
+
+      await processVideo({ input: 'video.mp4', output: '/out', timecodes: '00:00:10.000,00:00:30.000', reEncode: true })
+
+      expect(console.warn).not.toHaveBeenCalled()
+    })
+
+    it('exits with error when parseTimecodes throws (invalid format)', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(parseTimecodes).mockImplementation(() => { throw new Error('Invalid timecode at position 1: "badval"') })
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
+
+      await expect(processVideo({ input: 'video.mp4', output: '/out', timecodes: 'badval' })).rejects.toThrow('exit')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Invalid timecode at position 1'))
+    })
+
+    it('exits with error when a timecode is zero or negative', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(parseTimecodes).mockReturnValue([0, 10])
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
+
+      await expect(processVideo({ input: 'video.mp4', output: '/out', timecodes: '0s,10s' })).rejects.toThrow('exit')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('position 1 must be greater than 0'))
+    })
+
+    it('exits with error when timecodes are not in ascending order', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(parseTimecodes).mockReturnValue([30, 10])
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
+
+      await expect(processVideo({ input: 'video.mp4', output: '/out', timecodes: '00:00:30.000,00:00:10.000' })).rejects.toThrow('exit')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('position 2'))
+    })
+
+    it('exits with error when a timecode exceeds video duration', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(parseTimecodes).mockReturnValue([10, 200])
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
+
+      await expect(processVideo({ input: 'video.mp4', output: '/out', timecodes: '00:00:10.000,00:03:20.000' })).rejects.toThrow('exit')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('position 2'))
+    })
+  })
+
   describe('scene-detect segmentation (--scene-detect)', () => {
     it('calls detectSceneChanges with threshold 10 when sceneDetect is true', async () => {
       vi.spyOn(fs, 'existsSync').mockReturnValue(true)
@@ -327,5 +420,13 @@ describe('setupCli', () => {
     expect(program.requiredOption).toHaveBeenCalledWith('-i, --input <path>', expect.any(String))
     expect(program.action).toHaveBeenCalledWith(processVideo)
     expect(program.parse).toHaveBeenCalled()
+  })
+
+  it('registers --timecodes option via addOption', () => {
+    setupCli()
+    expect(vi.mocked(Option)).toHaveBeenCalledWith(
+      expect.stringContaining('--timecodes'),
+      expect.any(String)
+    )
   })
 })

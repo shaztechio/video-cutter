@@ -330,11 +330,122 @@ async function createSceneSegments (inputFile, outputDir, boundaries, verifySegm
     })
 }
 
+/**
+ * Parse a CSV string of timecodes into an array of seconds.
+ * Supported formats are HH:MM:SS[.nnnn], Ns, N.Ns, and [Nh][Nm]N[.N]s.
+ *
+ * @param {string} timecodeString - Comma-separated timecodes, e.g. "00:00:10.000,00:00:30.000", "10s,10.25s", or "0h0m10s,1h30m15.2s"
+ * @returns {number[]} - Array of timestamps in seconds
+ */
+function parseTimecodes (timecodeString) {
+  return timecodeString.split(',').map((tc, i) => {
+    const trimmed = tc.trim()
+    const pos = i + 1
+
+    // Format: HH:MM:SS[.nnn]
+    if (trimmed.includes(':')) {
+      const colonMatch = trimmed.match(/^(\d+):(\d+):(\d+(?:\.\d+)?)$/)
+      if (!colonMatch) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+      const [, h, m, s] = colonMatch
+      const seconds = Number.parseInt(h, 10) * 3600 + Number.parseInt(m, 10) * 60 + Number.parseFloat(s)
+      if (!Number.isFinite(seconds)) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+      return seconds
+    }
+
+    // Format: [Nh][Nm]N[.N]s — covers "10s", "10.25s", "0h0m10s", "1h30m15.2s"
+    const hmsMatch = trimmed.match(/^(?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s$/)
+    if (hmsMatch) {
+      const h = parseInt(hmsMatch[1] ?? '0')
+      const m = parseInt(hmsMatch[2] ?? '0')
+      const s = parseFloat(hmsMatch[3])
+      const seconds = h * 3600 + m * 60 + s
+      if (!Number.isFinite(seconds)) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+      return seconds
+    }
+
+    throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+  })
+}
+
+/**
+ * Format a time in seconds as HH-MM-SS.mmm for use in filenames.
+ * Uses integer millisecond arithmetic to correctly handle rounding carry.
+ *
+ * @param {number} seconds - Time in seconds (may be fractional)
+ * @returns {string} Formatted time string, e.g. "01-02-03.456"
+ */
+function formatTimecodeFilenameTime (seconds) {
+  const totalMs = Math.round(seconds * 1000)
+  const hours = Math.floor(totalMs / 3600000)
+  const minutes = Math.floor((totalMs % 3600000) / 60000)
+  const wholeSeconds = Math.floor((totalMs % 60000) / 1000)
+  const millis = totalMs % 1000
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(hours)}-${pad(minutes)}-${pad(wholeSeconds)}.${String(millis).padStart(3, '0')}`
+}
+
+/**
+ * Create video segments at specified timecode boundaries
+ *
+ * @param {string} inputFile - Path to the input video file
+ * @param {string} outputDir - Directory to save the segments
+ * @param {number[]} boundaries - Array of timestamps including 0 at start and total duration at end
+ * @param {boolean} verifySegments - Whether to verify segment durations
+ * @param {boolean} reEncode - Whether to re-encode for exact duration
+ * @returns {Promise<void>}
+ */
+async function createTimecodeSegments (inputFile, outputDir, boundaries, verifySegments = false, reEncode = false) {
+  const segmentCount = boundaries.length - 1
+  const promises = []
+
+  for (let i = 0; i < segmentCount; i++) {
+    const startTime = boundaries[i]
+    const endTime = boundaries[i + 1]
+
+    const seqStr = String(i + 1).padStart(3, '0')
+    const segmentFile = path.join(outputDir, `tc_${seqStr}_${formatTimecodeFilenameTime(startTime)}.mp4`)
+
+    promises.push(createSegment(inputFile, startTime, endTime, segmentFile, reEncode))
+  }
+
+  return Promise.all(promises)
+    .then(async () => {
+      console.log('All segments created successfully!')
+
+      if (verifySegments) {
+        console.log('Verifying segment durations...')
+        for (let i = 0; i < segmentCount; i++) {
+          const startTime = boundaries[i]
+          const endTime = boundaries[i + 1]
+          const expectedDuration = endTime - startTime
+
+          const seqStr = String(i + 1).padStart(3, '0')
+          const segmentFile = path.join(outputDir, `tc_${seqStr}_${formatTimecodeFilenameTime(startTime)}.mp4`)
+
+          const actualDuration = await getVideoDuration(segmentFile)
+          const difference = Math.abs(actualDuration - expectedDuration)
+          const tolerance = reEncode ? 0.1 : 1.0
+          if (difference > tolerance) {
+            console.warn(`Warning: Segment ${segmentFile} duration is ${actualDuration.toFixed(2)} seconds, expected ${expectedDuration.toFixed(2)} seconds`)
+          } else {
+            console.log(colors.green(`Verified: ${segmentFile} duration is correct`))
+          }
+        }
+      }
+    })
+    .catch(err => {
+      console.error('Error creating segments:', err)
+      process.exit(1)
+    })
+}
+
 export {
   getVideoDuration,
   createSegment,
   createCountSegments,
   createTimeSegments,
   detectSceneChanges,
-  createSceneSegments
+  createSceneSegments,
+  parseTimecodes,
+  createTimecodeSegments
 }
