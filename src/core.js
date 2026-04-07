@@ -366,6 +366,23 @@ function parseTimecodes (timecodeString) {
 }
 
 /**
+ * Format a time in seconds as HH-MM-SS.mmm for use in filenames.
+ * Uses integer millisecond arithmetic to correctly handle rounding carry.
+ *
+ * @param {number} seconds - Time in seconds (may be fractional)
+ * @returns {string} Formatted time string, e.g. "01-02-03.456"
+ */
+function formatTimecodeFilenameTime (seconds) {
+  const totalMs = Math.round(seconds * 1000)
+  const hours = Math.floor(totalMs / 3600000)
+  const minutes = Math.floor((totalMs % 3600000) / 60000)
+  const wholeSeconds = Math.floor((totalMs % 60000) / 1000)
+  const millis = totalMs % 1000
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(hours)}-${pad(minutes)}-${pad(wholeSeconds)}.${String(millis).padStart(3, '0')}`
+}
+
+/**
  * Create video segments at specified timecode boundaries
  *
  * @param {string} inputFile - Path to the input video file
@@ -383,14 +400,8 @@ async function createTimecodeSegments (inputFile, outputDir, boundaries, verifyS
     const startTime = boundaries[i]
     const endTime = boundaries[i + 1]
 
-    const hours = Math.floor(startTime / 3600)
-    const minutes = Math.floor((startTime % 3600) / 60)
-    const secs = startTime % 60
-    const pad = (n) => String(n).padStart(2, '0')
-    const millisStr = secs.toFixed(3).split('.')[1]
-    const timeStr = `${pad(hours)}-${pad(minutes)}-${pad(Math.floor(secs))}.${millisStr}`
     const seqStr = String(i + 1).padStart(3, '0')
-    const segmentFile = path.join(outputDir, `tc_${seqStr}_${timeStr}.mp4`)
+    const segmentFile = path.join(outputDir, `tc_${seqStr}_${formatTimecodeFilenameTime(startTime)}.mp4`)
 
     promises.push(createSegment(inputFile, startTime, endTime, segmentFile, reEncode))
   }
@@ -406,14 +417,8 @@ async function createTimecodeSegments (inputFile, outputDir, boundaries, verifyS
           const endTime = boundaries[i + 1]
           const expectedDuration = endTime - startTime
 
-          const hours = Math.floor(startTime / 3600)
-          const minutes = Math.floor((startTime % 3600) / 60)
-          const secs = startTime % 60
-          const pad = (n) => String(n).padStart(2, '0')
-          const millisStr = secs.toFixed(3).split('.')[1]
-          const timeStr = `${pad(hours)}-${pad(minutes)}-${pad(Math.floor(secs))}.${millisStr}`
           const seqStr = String(i + 1).padStart(3, '0')
-          const segmentFile = path.join(outputDir, `tc_${seqStr}_${timeStr}.mp4`)
+          const segmentFile = path.join(outputDir, `tc_${seqStr}_${formatTimecodeFilenameTime(startTime)}.mp4`)
 
           const actualDuration = await getVideoDuration(segmentFile)
           const difference = Math.abs(actualDuration - expectedDuration)

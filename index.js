@@ -248,7 +248,7 @@ function setupCli () {
       new Option('-t, --timecodes <timecodes>', 'cut at specified timecodes (CSV: HH:MM:SS[.nnnn],...)')
         .conflicts('segments')
         .conflicts('duration')
-        .conflicts('scene-detect')
+        .conflicts('sceneDetect')
     )
     .option('-o, --output <path>', 'output directory for segments (default: ./output/YYYY-MM-DD_HH-MM-SS/)')
     .option('--verify', 'verify that each segment matches its intended duration')
