@@ -291,6 +291,17 @@ describe('processVideo', () => {
       expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Invalid timecode at position 1'))
     })
 
+    it('exits with error when a timecode is zero or negative', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+      vi.mocked(getVideoDuration).mockResolvedValue(120)
+      vi.mocked(parseTimecodes).mockReturnValue([0, 10])
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit') })
+
+      await expect(processVideo({ input: 'video.mp4', output: '/out', timecodes: '0s,10s' })).rejects.toThrow('exit')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('position 1'))
+    })
+
     it('exits with error when timecodes are not in ascending order', async () => {
       vi.spyOn(fs, 'existsSync').mockReturnValue(true)
       vi.mocked(getVideoDuration).mockResolvedValue(120)

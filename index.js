@@ -110,6 +110,14 @@ async function processVideo (options) {
         process.exit(1)
       }
 
+      // Validate all timecodes are > 0
+      for (let i = 0; i < parsed.length; i++) {
+        if (parsed[i] <= 0) {
+          error(`Timecode at position ${i + 1} must be greater than 0`)
+          process.exit(1)
+        }
+      }
+
       // Validate ascending order
       for (let i = 1; i < parsed.length; i++) {
         if (parsed[i] <= parsed[i - 1]) {
