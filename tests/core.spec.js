@@ -368,6 +368,32 @@ describe('parseTimecodes', () => {
     })
   })
 
+  describe('HH:MM:SS:MS format', () => {
+    it('parses two-digit MS as centiseconds', () => {
+      expect(parseTimecodes('00:00:24:04')).toEqual([24.04])
+    })
+
+    it('parses one-digit MS as tenths of a second', () => {
+      expect(parseTimecodes('00:00:24:4')).toEqual([24.4])
+    })
+
+    it('parses three-digit MS as milliseconds', () => {
+      expect(parseTimecodes('00:00:24:040')).toEqual([24.04])
+    })
+
+    it('parses multiple HH:MM:SS:MS timecodes', () => {
+      expect(parseTimecodes('00:00:10:00,00:00:30:50')).toEqual([10, 30.5])
+    })
+
+    it('handles hours correctly', () => {
+      expect(parseTimecodes('01:00:00:00')).toEqual([3600])
+    })
+
+    it('trims whitespace around HH:MM:SS:MS timecodes', () => {
+      expect(parseTimecodes(' 00:00:24:04 ')).toEqual([24.04])
+    })
+  })
+
   describe('Ns / N.Ns format', () => {
     it('parses whole seconds', () => {
       expect(parseTimecodes('10s,15s,25s')).toEqual([10, 15, 25])
