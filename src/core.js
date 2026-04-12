@@ -332,9 +332,15 @@ async function createSceneSegments (inputFile, outputDir, boundaries, verifySegm
 
 /**
  * Parse a CSV string of timecodes into an array of seconds.
- * Supported formats are HH:MM:SS[.nnnn], Ns, N.Ns, and [Nh][Nm]N[.N]s.
+ * Supported formats:
+ *   - HH:MM:SS:MS — four colon-separated parts; the final field (MS) is treated as
+ *     fractional seconds scaled by its digit count: `:4` → 0.4 s, `:04` → 0.04 s,
+ *     `:004` → 0.004 s.
+ *   - HH:MM:SS[.nnnn] — hours, minutes, seconds with an optional decimal fraction.
+ *   - Ns / N.Ns — plain seconds, e.g. "10s" or "10.25s".
+ *   - [Nh][Nm]N[.N]s — hours/minutes/seconds with letter suffixes, e.g. "1h30m15.2s".
  *
- * @param {string} timecodeString - Comma-separated timecodes, e.g. "00:00:10.000,00:00:30.000", "10s,10.25s", or "0h0m10s,1h30m15.2s"
+ * @param {string} timecodeString - Comma-separated timecodes, e.g. "00:00:10.000,00:00:30.000", "10s,10.25s", "0h0m10s,1h30m15.2s", or "00:00:24:04"
  * @returns {number[]} - Array of timestamps in seconds
  */
 function parseTimecodes (timecodeString) {

@@ -95,6 +95,7 @@ All formats can be mixed freely in a single `-t` value:
 |--------|---------|-------------|
 | `HH:MM:SS` | `00:01:30` | Hours, minutes, seconds |
 | `HH:MM:SS.nnn` | `00:01:30.500` | With milliseconds |
+| `HH:MM:SS:MS` | `00:01:30:04` | MS field as fractional seconds scaled by digit count (`:4`→0.4 s, `:04`→0.04 s) |
 | `Ns` | `90s` | Seconds only |
 | `N.Ns` | `90.5s` | Seconds with decimal |
 | `NhNmNs` | `1h30m0s` | Hours, minutes, seconds with suffixes |
