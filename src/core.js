@@ -342,8 +342,18 @@ function parseTimecodes (timecodeString) {
     const trimmed = tc.trim()
     const pos = i + 1
 
-    // Format: HH:MM:SS[.nnn]
     if (trimmed.includes(':')) {
+      // Format: HH:MM:SS:MS (four colon-separated parts, MS scaled by digit count)
+      const fourPartMatch = trimmed.match(/^(\d+):(\d+):(\d+):(\d+)$/)
+      if (fourPartMatch) {
+        const [, h, m, s, ms] = fourPartMatch
+        const msValue = Number.parseInt(ms, 10) / Math.pow(10, ms.length)
+        const seconds = Number.parseInt(h, 10) * 3600 + Number.parseInt(m, 10) * 60 + Number.parseInt(s, 10) + msValue
+        if (!Number.isFinite(seconds)) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
+        return seconds
+      }
+
+      // Format: HH:MM:SS[.nnn]
       const colonMatch = trimmed.match(/^(\d+):(\d+):(\d+(?:\.\d+)?)$/)
       if (!colonMatch) throw new Error(`Invalid timecode at position ${pos}: "${trimmed}"`)
       const [, h, m, s] = colonMatch

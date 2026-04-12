@@ -253,7 +253,7 @@ function setupCli () {
         .conflicts('duration')
     )
     .addOption(
-      new Option('-t, --timecodes <timecodes>', 'cut at specified timecodes (CSV: HH:MM:SS[.nnnn],...)')
+      new Option('-t, --timecodes <timecodes>', 'cut at specified timecodes (CSV: HH:MM:SS[.nnnn] or HH:MM:SS:MS,...)')
         .conflicts('segments')
         .conflicts('duration')
         .conflicts('sceneDetect')
