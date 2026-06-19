@@ -37,7 +37,7 @@
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-n": "^16.6.2",
     "eslint-plugin-promise": "^6.6.0",
-    "jsdom": "^28.1.0",
+    "jsdom": "^29.1.1",
     "vitest": "^4.1.0"
   },
   "repository": {
